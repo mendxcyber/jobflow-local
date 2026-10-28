@@ -1,0 +1,108 @@
+{
+  "name": "JobFlow — buscar vagas e preparar currículos",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "6c31a184-2b63-4308-a60c-36ba468c1e01",
+      "name": "Executar agora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "f0a1615c-677c-4784-a009-e72471014361",
+      "name": "A cada 6 horas",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -420,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://riovagas-worker:8000/run",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "3234bcec-a403-4b54-9404-239111874c0a",
+      "name": "Pesquisar sites de emprego",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -130,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json; return [{json: {resultado: `Busca concluída: ${r.novas || 0} novas, ${r.aprovadas || 0} aprovadas, ${r.pendentes || 0} pendentes e ${r.descartadas || 0} descartadas. Abra http://localhost:8090 para revisar.`, ...r}}];"
+      },
+      "id": "6bc21128-8474-42a5-b4f0-16ea6d755b7c",
+      "name": "Mostrar resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        150,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar agora": {
+      "main": [
+        [
+          {
+            "node": "Pesquisar sites de emprego",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada 6 horas": {
+      "main": [
+        [
+          {
+            "node": "Pesquisar sites de emprego",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pesquisar sites de emprego": {
+      "main": [
+        [
+          {
+            "node": "Mostrar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "tags": []
+}

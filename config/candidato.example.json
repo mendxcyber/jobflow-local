@@ -1,0 +1,70 @@
+{
+  "nome_completo": "Pessoa Exemplo",
+  "nome_arquivos": "Exemplo",
+  "telefone": "(00) 00000-0000",
+  "email": "pessoa@example.com",
+  "localidade": "Cidade de exemplo",
+  "formacao": "Curso de exemplo em Tecnologia",
+  "situacao_formacao": "Em andamento",
+  "ensino": "Ensino Médio completo",
+  "cursos": [
+    "Curso demonstrativo de planilhas"
+  ],
+  "competencias": [
+    "Planilhas",
+    "Registro em CRM",
+    "Atendimento digital",
+    "Suporte técnico básico"
+  ],
+  "idiomas": [
+    "Português — nativo",
+    "Inglês — intermediário"
+  ],
+  "resumo": "Perfil fictício com experiência em atendimento, organização de dados e suporte básico.",
+  "resumos": {
+    "tecnologia": "Perfil fictício com experiência em suporte básico a usuários e registro de solicitações.",
+    "atendimento": "Perfil fictício com experiência em atendimento digital e registro em CRM.",
+    "administrativo": "Perfil fictício com experiência em organização de documentos e planilhas.",
+    "comercial": "Perfil fictício com experiência em atendimento e registro de contatos."
+  },
+  "experiencias": [
+    {
+      "id": "suporte",
+      "empresa": "Empresa Exemplo A",
+      "cargo": "Assistente de suporte",
+      "atividades": [
+        "Apoio básico a usuários de sistemas internos.",
+        "Registro e acompanhamento de solicitações."
+      ]
+    },
+    {
+      "id": "atendimento",
+      "empresa": "Empresa Exemplo B",
+      "cargo": "Atendente",
+      "atividades": [
+        "Atendimento por canais digitais.",
+        "Atualização de registros no CRM."
+      ]
+    },
+    {
+      "id": "administrativo",
+      "empresa": "Empresa Exemplo C",
+      "cargo": "Assistente administrativo",
+      "atividades": [
+        "Organização de documentos e planilhas."
+      ]
+    }
+  ],
+  "ordem_experiencias": {
+    "tecnologia": [
+      "suporte",
+      "atendimento",
+      "administrativo"
+    ],
+    "atendimento": [
+      "atendimento",
+      "suporte",
+      "administrativo"
+    ]
+  }
+}

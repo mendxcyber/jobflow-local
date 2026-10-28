@@ -1,0 +1,179 @@
+{
+  "automaticas": [
+    {
+      "id": "riovagas",
+      "nome": "RioVagas",
+      "tipo": "riovagas",
+      "url": "https://riovagas.com.br/",
+      "paginas": 3
+    },
+    {
+      "id": "gupy",
+      "nome": "Gupy",
+      "tipo": "gupy",
+      "url": "https://portal.gupy.io/job-search",
+      "max_detalhes_por_execucao": 12,
+      "intervalo_detalhes_segundos": 2,
+      "termos": [
+        "atendimento",
+        "administrativo",
+        "suporte",
+        "tecnologia",
+        "backoffice",
+        "telemarketing",
+        "segurança",
+        "vendas",
+        "comercial",
+        "customer success",
+        "assistente",
+        "home office",
+        "cibersegurança",
+        "SOC junior",
+        "segurança da informação",
+        "service desk",
+        "SIEM"
+      ]
+    },
+    {
+      "id": "glassdoor",
+      "nome": "Glassdoor",
+      "tipo": "glassdoor_html",
+      "max_detalhes_por_execucao": 10,
+      "intervalo_detalhes_segundos": 2,
+      "urls": [
+        "https://www.glassdoor.com.br/Vaga/brasil-vagas-SRCH_IL.0,6_IN36.htm?sc.occupationParam=operador%28a%29+de+telemarketing&remoteWorkType=1&fromAge=7",
+        "https://www.glassdoor.com.br/Vaga/brasil-vagas-SRCH_IL.0,6_IN36.htm?sc.occupationParam=atendimento&remoteWorkType=1&fromAge=7",
+        "https://www.glassdoor.com.br/Vaga/brasil-vagas-SRCH_IL.0,6_IN36.htm?sc.occupationParam=suporte&remoteWorkType=1&fromAge=7",
+        "https://www.glassdoor.com.br/Vaga/brasil-vagas-SRCH_IL.0,6_IN36.htm?sc.occupationParam=assistente+administrativo&remoteWorkType=1&fromAge=7",
+        "https://www.glassdoor.com.br/Vaga/brasil-vagas-SRCH_IL.0,6_IN36.htm?sc.occupationParam=vendas&remoteWorkType=1&fromAge=7"
+      ]
+    },
+    {
+      "id": "vagas",
+      "nome": "Vagas.com",
+      "tipo": "vagas_html",
+      "max_detalhes_por_execucao": 8,
+      "intervalo_detalhes_segundos": 4,
+      "urls": [
+        "https://www.vagas.com.br/vagas-de-emprego-no-rio-de-janeiro",
+        "https://www.vagas.com.br/vagas-de-atendimento-em-rio-de-janeiro",
+        "https://www.vagas.com.br/vagas-de-administrativo-em-rio-de-janeiro",
+        "https://www.vagas.com.br/vagas-de-suporte-em-rio-de-janeiro",
+        "https://www.vagas.com.br/vagas-de-home-office-em-rio-de-janeiro?e%5B%5D=Rio+de+Janeiro"
+      ]
+    },
+    {
+      "id": "infojobs",
+      "nome": "InfoJobs",
+      "tipo": "infojobs_html",
+      "urls": [
+        "https://www.infojobs.com.br/vagas-de-emprego-em-rio-janeiro,-rj.aspx",
+        "https://www.infojobs.com.br/vagas-de-emprego-remoto-em-rio-janeiro,-rj-trabalho-home-office.aspx",
+        "https://www.infojobs.com.br/vagas-de-emprego-administrativo-em-rio-janeiro,-rj.aspx",
+        "https://www.infojobs.com.br/vagas-de-emprego-atendimento-em-rio-janeiro,-rj.aspx"
+      ]
+    },
+    {
+      "id": "trabalhabrasil",
+      "nome": "Trabalha Brasil",
+      "tipo": "trabalhabrasil_html",
+      "urls": [
+        "https://www.trabalhabrasil.com.br/vagas-de-emprego-em-rio-de-janeiro-rj"
+      ]
+    },
+    {
+      "id": "remoteok",
+      "nome": "Remote OK",
+      "tipo": "remoteok_api",
+      "url": "https://remoteok.com/api",
+      "max_detalhes_por_execucao": 30
+    },
+    {
+      "id": "wwr",
+      "nome": "We Work Remotely",
+      "tipo": "wwr_rss",
+      "url": "https://weworkremotely.com/remote-jobs.rss",
+      "max_detalhes_por_execucao": 30
+    },
+    {
+      "id": "geekhunter",
+      "nome": "GeekHunter",
+      "tipo": "geekhunter_html",
+      "urls": [
+        "https://www.geekhunter.com/pt/vagas"
+      ],
+      "max_detalhes_por_execucao": 8,
+      "intervalo_detalhes_segundos": 2
+    }
+  ],
+  "buscas_manuais": [
+    {
+      "nome": "LinkedIn",
+      "url": "https://www.linkedin.com/jobs/search/?keywords=atendimento%20OR%20administrativo%20OR%20suporte&location=Rio%20de%20Janeiro%2C%20Brasil&f_TPR=r604800"
+    },
+    {
+      "nome": "Indeed",
+      "url": "https://br.indeed.com/jobs?q=cybersecurity+OR+SOC+OR+SIEM+OR+Splunk+OR+Sentinel+OR+CrowdStrike+OR+Fortinet&fromage=7"
+    },
+    {
+      "nome": "Catho",
+      "url": "https://www.catho.com.br/vagas/rio-de-janeiro-rj/"
+    },
+    {
+      "nome": "Remotar",
+      "url": "https://remotar.com.br/"
+    },
+    {
+      "nome": "Empregos.com.br",
+      "url": "https://www.empregos.com.br/vagas/rio-de-janeiro/"
+    },
+    {
+      "nome": "SINE",
+      "url": "https://www.sine.com.br/vagas-empregos-em-rio-de-janeiro-rj"
+    },
+    {
+      "nome": "InfoSec Job Board",
+      "url": "https://www.infosecjobboard.com/"
+    },
+    {
+      "nome": "Wellfound",
+      "url": "https://wellfound.com/jobs"
+    },
+    {
+      "nome": "CyberSecJobs",
+      "url": "https://www.cybersecjobs.com/"
+    },
+    {
+      "nome": "Alion — Cybersecurity Brasil",
+      "url": "https://alion.io/cybersecurity-jobs/brazil"
+    },
+    {
+      "nome": "HackerOne Careers",
+      "url": "https://www.hackerone.com/careers"
+    },
+    {
+      "nome": "Palo Alto Networks",
+      "url": "https://jobs.paloaltonetworks.com/"
+    },
+    {
+      "nome": "CrowdStrike",
+      "url": "https://www.crowdstrike.com/en-us/careers/"
+    },
+    {
+      "nome": "Sophos",
+      "url": "https://www.sophos.com/en-us/careers"
+    },
+    {
+      "nome": "Fortinet",
+      "url": "https://www.fortinet.com/corporate/careers"
+    },
+    {
+      "nome": "Check Point",
+      "url": "https://careers.checkpoint.com/"
+    },
+    {
+      "nome": "Microsoft",
+      "url": "https://careers.microsoft.com/"
+    }
+  ]
+}

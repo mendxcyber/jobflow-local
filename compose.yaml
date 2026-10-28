@@ -1,0 +1,41 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: jobflow-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+      - TZ=America/Sao_Paulo
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/files:ro
+    depends_on:
+      riovagas-worker:
+        condition: service_healthy
+
+  riovagas-worker:
+    build: ./worker
+    container_name: jobflow-worker
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8000"
+    environment:
+      - TZ=America/Sao_Paulo
+      - MAX_PAGES=${MAX_PAGES:-3}
+      - REQUEST_DELAY_SECONDS=${REQUEST_DELAY_SECONDS:-0.8}
+    volumes:
+      - ./config:/app/config:ro
+      - ./dados:/app/data
+      - ./curriculos:/app/output
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  n8n_data:
