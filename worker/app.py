@@ -4,6 +4,7 @@ import automation
 import mailer
 import dashboard as dashboard_ui
 import resume_en
+import config_assistant
 import hashlib
 import html
 import json
@@ -45,7 +46,7 @@ REQUEST_DELAY = float(os.getenv("REQUEST_DELAY_SECONDS", "0.8"))
 TEMPLATE_VERSION = "ats-v3-market"
 SOURCE_COOLDOWNS: dict[str, datetime] = {}
 
-app = FastAPI(title="JobFlow Local")
+app = FastAPI(title="JobFlow")
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=["localhost","127.0.0.1","[::1]","riovagas-worker","testserver"])
 
 
@@ -62,6 +63,22 @@ def load_json(name: str) -> dict[str, Any]:
     path = CONFIG_DIR / name
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def workspace_config() -> dict[str, Any]:
+    try:
+        return load_json("workspaces.json")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"workspaces": [{"id": "brasil", "label": "Brasil"}, {"id": "exterior", "label": "EUA / Canadá"}]}
+
+
+def workspace_ids() -> set[str]:
+    return {str(item.get("id")) for item in workspace_config().get("workspaces", []) if item.get("id")}
+
+
+def safe_market(value: str) -> str:
+    ids = workspace_ids()
+    return value if value in ids else (next(iter(ids)) if ids else "brasil")
 
 
 def normalize(value: str) -> str:
@@ -260,12 +277,28 @@ def collect_remote_feed(session: requests.Session, source: dict[str, Any]) -> li
             except (ValueError, TypeError):
                 continue
         date = datetime.fromtimestamp(date.timestamp())
-        description = BeautifulSoup(record["description"], "html.parser").get_text("\n", strip=True)
-        jobs.append(dict(url=record["url"], source=source["nome"], title=title, cargo=title,
+        description_html = record["description"]
+        description_soup = BeautifulSoup(description_html, "html.parser")
+        direct_url = ""
+        if source["tipo"] == "wwr_rss":
+            candidates = []
+            for anchor in description_soup.select("a[href^='https://']"):
+                href = anchor.get("href", "")
+                host = urlparse(href).netloc.lower()
+                if not host or "weworkremotely.com" in host or any(x in host for x in ("linkedin.com", "facebook.com", "twitter.com", "x.com")):
+                    continue
+                label = normalize(" ".join(anchor.stripped_strings))
+                candidates.append((0 if "apply" in label or "candidat" in label else 1, href))
+            if candidates:
+                direct_url = sorted(candidates)[0][1]
+        description = description_soup.get_text("\n", strip=True)
+        if direct_url:
+            description = f"Candidatura direta localizada na empresa. Origem: We Work Remotely.\n\n{description}"
+        jobs.append(dict(url=direct_url or record["url"], source=source["nome"], title=title, cargo=title,
                          company=record["company"], location=record["location"] or "Internacional — verificar elegibilidade",
                          published_at=date, salary=None, salary_text="Consultar anúncio original (moeda e periodicidade)",
                          contract_type=infer_contract(description), work_mode="Remoto", description=description[:30000],
-                         international_review=True))
+                         international_review=True, market=source.get("workspace", "exterior")))
     return jobs[:int(source.get("max_detalhes_por_execucao", 30))]
 
 
@@ -526,6 +559,52 @@ def excluded_title_reason(title: str, filters: dict[str, Any]) -> str | None:
     return None
 
 
+SKILL_FAMILIES = {
+    "suporte de TI": ("suporte", "support", "help desk", "service desk", "hardware", "software", "troubleshoot", "infraestrutura"),
+    "cibersegurança": ("cyber", "security", "seguranca", "soc", "siem", "incidente", "incident", "vulnerabilidade", "iam"),
+    "atendimento": ("atendimento", "customer service", "cliente", "sac", "chat", "telefone", "call center", "telemarketing"),
+    "administração e dados": ("administrativo", "administration", "backoffice", "back office", "planilha", "excel", "office", "dados", "data entry", "relatorio"),
+    "vendas e CRM": ("vendas", "sales", "comercial", "crm", "lead", "prospeccao", "retencao", "negociacao"),
+    "sistemas e automação": ("sistemas", "systems", "python", "automacao", "automation", "linux", "api", "sql"),
+}
+
+
+def candidate_text() -> str:
+    try:
+        candidate = load_json("candidato.json")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return ""
+    fragments: list[str] = []
+    for key in ("resumo", "formacao", "cursos", "competencias", "idiomas", "experiencias"):
+        fragments.append(json.dumps(candidate.get(key, ""), ensure_ascii=False))
+    return normalize(" ".join(fragments))
+
+
+def adherence_score(job: dict[str, Any], filters: dict[str, Any], *, is_remote: bool, international: bool) -> int:
+    text = normalize(" ".join(str(job.get(k, "")) for k in ("title", "cargo", "description", "contract_type", "work_mode")))
+    profile = candidate_text()
+    required = []
+    matched = []
+    for family, terms in SKILL_FAMILIES.items():
+        if any(term in text for term in terms):
+            required.append(family)
+            if any(term in profile for term in terms):
+                matched.append(family)
+    skill_points = round(45 * (len(matched) / len(required))) if required else 18
+    score = skill_points
+    score += 15 if is_remote else 5
+    if re.search(r"\b(junior|jr|entry.?level|assistente|assistant|auxiliar|intern|estagio|trainee)\b", text):
+        score += 10
+    if any(term in normalize(job.get("contract_type", "")) for term in ("clt", "efetivo", "internship", "estagio")):
+        score += 8
+    salary = job.get("salary")
+    if international or salary is None or salary >= float(filters.get("salario_minimo_remoto", 1621)):
+        score += 7
+    priorities = [normalize(item) for item in filters.get("prioridades", [])]
+    score += min(15, sum(3 for item in priorities if item and item in text))
+    return max(1, min(score, 100))
+
+
 def link_priority(item: dict[str, str], filters: dict[str, Any]) -> int:
     title = normalize(item.get("title", ""))
     return sum(1 for term in filters.get("prioridades", []) if normalize(term) in title)
@@ -590,6 +669,7 @@ def collect_all_jobs(
                     except Exception as exc:
                         errors.append({"fonte": source_name, "url": item["url"], "erro": str(exc)[:250]})
             for job in collected:
+                job.setdefault("market", source.get("workspace") or ("exterior" if source["tipo"] in {"remoteok_api", "wwr_rss", "remotive_api"} else "brasil"))
                 jobs[job["url"]] = job
         except Exception as exc:
             errors.append({"fonte": source_name, "url": source.get("url", ""), "erro": str(exc)[:250]})
@@ -631,6 +711,8 @@ def classify(job: dict[str, Any], filters: dict[str, Any]) -> tuple[str, str, in
 
     international = automation.market_for(job) == "exterior"
     if international:
+        if re.search(r"pay (?:to|before you) apply|payment required to apply|subscription required to apply|upgrade (?:your plan )?to apply|paid membership required", combined):
+            reasons.append("portal exige pagamento ou assinatura para candidatura")
         eligible, message = automation.eligibility(job)
         if eligible == "blocked": reasons.append(message)
         elif eligible == "review": pending.append(message)
@@ -714,20 +796,34 @@ def classify(job: dict[str, Any], filters: dict[str, Any]) -> tuple[str, str, in
     if reasons:
         return "descartada", "; ".join(dict.fromkeys(reasons)), 0
 
-    score = 50 if is_remote else 25
-    if any(term in normalize(job.get("contract_type", "")) for term in ["clt", "efetivo"]):
-        score += 15
-    if salary and salary >= float(filters["salario_minimo_remoto"]):
-        score += min(15, int((salary - float(filters["salario_minimo_remoto"])) / 150))
-    for priority in filters.get("prioridades", []):
-        if normalize(priority) in combined:
-            score += 4
+    score = adherence_score(job, filters, is_remote=is_remote, international=international)
     if pending:
         return "pendente", "; ".join(dict.fromkeys(pending)), min(score, 100)
     return "aprovada", "compatível com os filtros automáticos; revisar antes de enviar", min(score, 100)
 
 
-TRACKS = {'tecnologia': {'terms': ['tecnologia', 'suporte', 'ti', 'informatica', 'sistema', 'cyber', 'seguranca'], 'summary': '', 'order': []}, 'administrativo': {'terms': ['administrativo', 'backoffice', 'planilha', 'documento', 'operacional', 'relatorio'], 'summary': '', 'order': []}, 'comercial': {'terms': ['venda', 'comercial', 'prospeccao', 'negociacao', 'lead', 'meta'], 'summary': '', 'order': []}, 'atendimento': {'terms': ['atendimento', 'cliente', 'sac', 'chat', 'whatsapp', 'telemarketing'], 'summary': '', 'order': []}}
+TRACKS = {
+    "tecnologia": {
+        "terms": ["tecnologia", "suporte", "ti", "informatica", "sistema", "cyber", "seguranca"],
+        "summary": "Profissional com experiência em suporte técnico básico, sistemas internos, organização de dados e atendimento remoto. Cursa Tecnologia em Segurança Cibernética na FIAP, com conclusão prevista para 2028.",
+        "order": ["forza", "forneria", "datametrica"],
+    },
+    "administrativo": {
+        "terms": ["administrativo", "backoffice", "planilha", "documento", "operacional", "relatorio"],
+        "summary": "Profissional com experiência em rotinas administrativas, organização de documentos e dados, planilhas, relatórios, sistemas internos e suporte operacional. Possui vivência com atendimento e trabalho remoto.",
+        "order": ["forza", "forneria", "datametrica"],
+    },
+    "comercial": {
+        "terms": ["venda", "comercial", "prospeccao", "negociacao", "lead", "meta"],
+        "summary": "Profissional com experiência em atendimento ativo e receptivo, relacionamento com clientes, retenção, registro em CRM e trabalho com metas. Possui boa comunicação, escuta ativa e vivência em atendimento remoto.",
+        "order": ["datametrica", "forneria", "forza"],
+    },
+    "atendimento": {
+        "terms": ["atendimento", "cliente", "sac", "chat", "whatsapp", "telemarketing"],
+        "summary": "Profissional com experiência em atendimento digital e telefônico, resolução de demandas, acompanhamento de solicitações e registro de informações em CRM e sistemas internos. Possui vivência em trabalho remoto.",
+        "order": ["forneria", "datametrica", "forza"],
+    },
+}
 
 
 def choose_track(job_text: str) -> str:
@@ -850,14 +946,15 @@ def build_pdf(job: sqlite3.Row, candidate: dict[str, Any], target: Path, font_si
     track_name = choose_track(job_text)
     track = TRACKS[track_name]
     summary_override = job.get("summary_override") if isinstance(job, dict) else None
-    professional_summary = summary_override or candidate.get("resumos", {}).get(track_name, candidate.get("resumo", ""))
+    professional_summary = summary_override or track["summary"]
     experiences_by_id = {exp["id"]: exp for exp in candidate["experiencias"]}
-    order = candidate.get("ordem_experiencias", {}).get(track_name, list(experiences_by_id))
-    experiences = [experiences_by_id[item] for item in order if item in experiences_by_id]
+    experiences = [experiences_by_id[item] for item in track["order"] if item in experiences_by_id]
+    experiences.extend(item for key,item in experiences_by_id.items() if key not in track["order"])
+    experiences = experiences[:3]
 
     story = [
         paragraph(candidate["nome_completo"], name_style),
-        paragraph(f"{candidate['telefone']}  |  {candidate['email']}  |  {candidate.get("localidade", "Localidade não informada")}", contact_style),
+        paragraph(f"{candidate['telefone']}  |  {candidate['email']}  |  Rio de Janeiro/RJ  |  Trabalho remoto", contact_style),
         HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#777777"), spaceBefore=0, spaceAfter=1.0 * mm),
         ats_section("Resumo profissional", heading),
         Spacer(1, 0.9 * mm),
@@ -874,7 +971,7 @@ def build_pdf(job: sqlite3.Row, candidate: dict[str, Any], target: Path, font_si
         story.append(Spacer(1, 0.55 * mm))
 
     story.extend([ats_section("Competências técnicas", heading), Spacer(1, 0.9 * mm)])
-    for label, description in [("Competências declaradas", ", ".join(candidate.get("competencias", [])))]:
+    for label, description in skill_lines(track_name):
         story.append(rich_paragraph(f"<b>{html.escape(label)}:</b> {html.escape(description)}", small))
 
     story.extend([
@@ -886,7 +983,7 @@ def build_pdf(job: sqlite3.Row, candidate: dict[str, Any], target: Path, font_si
         paragraph(" | ".join(candidate["cursos"]), small),
         ats_section("Idiomas", heading),
         Spacer(1, 0.9 * mm),
-        paragraph(" | ".join(candidate.get("idiomas", [])), small),
+        paragraph("Inglês intermediário", small),
     ])
 
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -966,6 +1063,14 @@ class ApplicationResult(BaseModel):
     current_url: str = ""
     attempt_token: str = ""
     evidence: str = ""
+
+
+class AssistantRequest(BaseModel):
+    message: str
+
+
+class AssistantApply(BaseModel):
+    actions: list[dict[str, Any]]
 
 
 def application_payload(request: Request, row: sqlite3.Row) -> dict[str, Any]:
@@ -1066,6 +1171,46 @@ def question_answers(job_id: int, data: dict[str, Any]):
         conn.close()
 
 
+@app.get("/downloads/JobFlow.zip")
+def extension_download():
+    return RedirectResponse("https://github.com/mendxcyber/jobflow-browser-extension/releases/latest",status_code=307)
+
+
+@app.get(f"/downloads/JobFlow-{automation.VERSION}.xpi")
+def signed_extension_download():
+    return RedirectResponse("https://github.com/mendxcyber/jobflow-browser-extension/releases/latest",status_code=307)
+
+
+@app.get("/assets/jobflow-banner.png")
+def jobflow_banner():
+    return FileResponse(APP_DIR / "jobflow-banner.png",media_type="image/png")
+
+
+@app.get("/assets/jobflow-icon.svg")
+def jobflow_icon():
+    return FileResponse(APP_DIR / "jobflow-icon.svg",media_type="image/svg+xml")
+
+
+@app.get("/assistant",response_class=HTMLResponse)
+def assistant_page():
+    return '''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>IA local — JobFlow</title><style>body{background:#07111c;color:#e9f8ff;font:16px/1.5 Segoe UI;max-width:880px;margin:40px auto;padding:20px}a{color:#40ead1}textarea,button,pre{box-sizing:border-box;width:100%;border:1px solid #285165;border-radius:12px;background:#0e2030;color:#ecffff;padding:14px}textarea{min-height:130px}button{margin-top:12px;background:#00c9a7;color:#021712;font-weight:800;cursor:pointer}button[disabled]{opacity:.5}pre{white-space:pre-wrap}.hint{color:#9cb8c8}</style><a href="/">← Painel</a><h1>Configurar o JobFlow com IA local</h1><p class="hint">Descreva mercados, fontes ou filtros. A IA prepara um plano; nada muda antes de você clicar em Aplicar.</p><textarea id="message" placeholder="Ex.: crie um workspace para Portugal, remoto, e adicione a fonte https://..."></textarea><button id="plan">Gerar plano</button><pre id="result">Aguardando pedido.</pre><button id="apply" hidden>Aplicar alterações</button><script>let actions=[];const result=document.querySelector('#result'),apply=document.querySelector('#apply');document.querySelector('#plan').onclick=async()=>{result.textContent='Consultando a IA local...';apply.hidden=true;try{const r=await fetch('/api/assistant/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:document.querySelector('#message').value})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Falha');actions=d.actions||[];result.textContent=d.message+'\n\n'+JSON.stringify(actions,null,2);apply.hidden=!actions.length}catch(e){result.textContent=e.message}};apply.onclick=async()=>{apply.disabled=true;const r=await fetch('/api/assistant/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actions})});const d=await r.json();result.textContent=(d.changed||[]).join('\n')||'Nenhuma alteração aplicada.';apply.hidden=true;apply.disabled=false}</script></html>'''
+
+
+@app.post("/api/assistant/plan")
+def assistant_plan(data: AssistantRequest):
+    try:
+        return config_assistant.plan(data.message,CONFIG_DIR,load_json("automacao.json").get("ai",{}))
+    except requests.RequestException as exc:
+        raise HTTPException(503,"IA local indisponível. Inicie o serviço Ollama e tente novamente.") from exc
+    except (ValueError,json.JSONDecodeError,KeyError) as exc:
+        raise HTTPException(502,"A IA não produziu um plano válido. Reformule o pedido.") from exc
+
+
+@app.post("/api/assistant/apply")
+def assistant_apply(data: AssistantApply):
+    return {"changed":config_assistant.apply(data.actions,CONFIG_DIR)}
+
+
 @app.get("/guide",response_class=HTMLResponse)
 def guide():
     return (APP_DIR / "guide.html").read_text(encoding="utf-8")
@@ -1161,11 +1306,11 @@ def dashboard_tab_for(row):
 
 
 @app.get("/",response_class=HTMLResponse)
-def dashboard(request:Request,response:Response,tab:str="novas",market:str="brasil"):
+def dashboard(request:Request,response:Response,tab:str="novas",market:str="brasil",q:str=""):
     response.headers["Cache-Control"]="no-store"
     conn=get_db()
     try:
-        return dashboard_ui.render(conn,load_json("fontes.json"),market,tab)
+        return dashboard_ui.render(conn,load_json("fontes.json"),workspace_config(),safe_market(market),tab,q)
     finally:
         conn.close()
 
@@ -1173,7 +1318,7 @@ def dashboard(request:Request,response:Response,tab:str="novas",market:str="bras
 @app.post("/run-browser")
 def run_browser(market: str="brasil") -> RedirectResponse:
     run_search()
-    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab=fila", status_code=303)
+    return RedirectResponse(f"/?market={safe_market(market)}&tab=fila", status_code=303)
 
 
 @app.post("/jobs/{job_id}/status")

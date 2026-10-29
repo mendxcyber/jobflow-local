@@ -18,7 +18,7 @@ from pypdf import PdfReader
 class AutomationTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
-        self.patches=[patch.object(app,'DATA_DIR',Path(self.temp.name)),patch.object(app,'DB_PATH',Path(self.temp.name)/'jobs.db'),patch.object(app,'OUTPUT_DIR',Path(self.temp.name)/'pdf')]
+        self.patches=[patch.object(app,'DATA_DIR',Path(self.temp.name)),patch.object(app,'DB_PATH',Path(self.temp.name)/'jobs.db'),patch.object(app,'OUTPUT_DIR',Path(self.temp.name)/'pdf'),patch.object(app,'CONFIG_DIR',Path(__file__).resolve().parents[1]/'config')]
         for p in self.patches:p.start()
         self.secret_patch=patch.dict(os.environ,{"SMTP_CONFIG_FILE":str(Path(self.temp.name)/'smtp.json'),"PERSONALIZED_DIR":""})
         self.secret_patch.start()
@@ -33,7 +33,7 @@ class AutomationTests(unittest.TestCase):
     def fake_generate(self,c,id):
         c.execute("UPDATE jobs SET pdf_path='test.pdf',pdf_sha256='hash',resume_language='pt' WHERE id=?",(id,));c.commit()
     def claim(self):
-        return automation.claim(self.conn,'3.0.0',lambda r:dict(r),self.fake_generate)['job']
+        return automation.claim(self.conn,automation.VERSION,lambda r:dict(r),self.fake_generate)['job']
     def row(self):
         return self.conn.execute('SELECT * FROM jobs WHERE id=?',(self.id,)).fetchone()
     def test_remote_brazil_any_state(self):
@@ -56,7 +56,7 @@ class AutomationTests(unittest.TestCase):
         self.assertIsNone(automation.claim(self.conn,'',lambda r:dict(r),self.fake_generate)['job'])
     def test_claim_single_and_regenerate(self):
         job=self.claim();self.assertEqual(job['pdf_sha256'],'hash')
-        self.assertIsNone(automation.claim(self.conn,'3.0.0',lambda r:dict(r),self.fake_generate)['job'])
+        self.assertIsNone(automation.claim(self.conn,automation.VERSION,lambda r:dict(r),self.fake_generate)['job'])
     def test_receipt_required(self):
         job=self.claim()
         with self.assertRaises(HTTPException):automation.record_result(self.conn,self.id,app.ApplicationResult(state='sent',attempt_token=job['attempt_token']))
@@ -105,7 +105,7 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(self.row()['status'],'enviada')
     def test_market_ui_does_not_leak_other_market(self):
         self.conn.execute("UPDATE jobs SET market='exterior' WHERE id=?",(self.id,));self.conn.commit()
-        page=dashboard.render(self.conn,{},'brasil','fila')
+        page=dashboard.render(self.conn,{},app.workspace_config(),'brasil','fila')
         self.assertNotIn('Junior customer support</h3>',page)
     def test_email_sends_english_pdf_and_logs_acceptance(self):
         self.conn.execute("UPDATE jobs SET market='exterior' WHERE id=?",(self.id,));self.conn.commit()

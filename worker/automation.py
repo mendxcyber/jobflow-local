@@ -8,7 +8,7 @@ from pathlib import Path
 import requests
 from fastapi import HTTPException
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 INTERNATIONAL_SOURCES = {"Remote OK", "We Work Remotely", "Remotive", "Himalayas"}
 
 
@@ -78,7 +78,7 @@ def recover_stale(conn):
 
 def claim(conn, client_version, payload, generate):
     if client_version != VERSION:
-        return {"job": None, "reason": "Atualize a extensão para 3.0.0; clientes antigos estão pausados para evitar duplicatas."}
+        return {"job": None, "reason": f"Atualize a extensão para {VERSION}; clientes antigos estão pausados para evitar duplicatas."}
     recover_stale(conn)
     conn.execute("BEGIN IMMEDIATE")
     if conn.execute("SELECT id FROM jobs WHERE apply_state='processing' LIMIT 1").fetchone():

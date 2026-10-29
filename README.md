@@ -24,14 +24,17 @@ Os vídeos mostram a interface em uso. A instalação pública começa com dados
 ## Funcionalidades
 
 - Interface dark com mercados **Brasil** e **EUA / Canadá** e cartões por vaga.
+- Tela de abertura animada, busca por cargo/empresa/fonte/local e workspaces configuráveis.
+- Percentual de aderência calculado a partir das competências do currículo e dos filtros.
 - Remotas no Brasil inteiro; presenciais sujeitas aos filtros de localização e salário.
 - Fontes internacionais globais/LATAM e revisão de elegibilidade geográfica. A categoria não comprova a sede da empresa.
 - Novas oportunidades, Fila automática, Ação necessária, Envios automáticos, Enviadas/histórico, Pendentes e Ignoradas.
 - PDFs em português e inglês, com dados revisados, texto selecionável e nomes curtos.
-- Fila com tentativa identificada, prevenção de duplicatas e integração com a [extensão 3.0.0](https://github.com/mendxcyber/jobflow-browser-extension).
+- Fila com tentativa identificada, prevenção de duplicatas e integração com a [extensão 3.1.0](https://github.com/mendxcyber/jobflow-browser-extension).
 - Registro de envio exige evidência da página ou aceitação SMTP; guarda data, mensagem e SHA-256 do PDF.
 - Botão de envio por e-mail, com destinatário visível e PDF regenerado antes do envio.
-- Banco de respostas confirmadas e seleção opcional por IA local via Ollama.
+- Assistente gratuito via Ollama para criar workspaces, adicionar fontes e ajustar filtros após confirmação.
+- Detecção de portais que exigem pagamento e preferência por links diretos da empresa em feeds internacionais.
 - Estado da extensão, diagnóstico de coleta, notificações e workflow n8n para buscas periódicas.
 
 ## Funcionamento e evolução planejada
@@ -81,11 +84,12 @@ Abra http://localhost:8090 e http://localhost:5678. Cadastre o usuário local do
 | `config/fontes.json` | Coletores automáticos e links manuais por mercado |
 | `config/respostas.json` | Respostas confirmadas em português; inicia vazio |
 | `config/respostas-en.json` | Respostas confirmadas em inglês; inicia vazio |
-| `config/automacao.json` | IA opcional, desligada por padrão na edição pública |
+| `config/automacao.json` | Modelo e endereço da IA local opcional |
+| `config/workspaces.json` | Mercados, países e fontes manuais exibidos no painel |
 
 A versão inglesa não é inventada pelo modelo: preencha `en`. Resumos e ordem das experiências por área podem ser definidos em `en.summaries` e `en.experience_order`.
 
-Os PDFs ficam em subpastas curtas de `curriculos/`. Para uma segunda pasta, monte-a no contêiner e defina `PERSONALIZED_DIR`. Nenhum caminho pessoal do autor está fixado no código público.
+Os PDFs ficam em subpastas curtas de `curriculos/`. O botão de salvar usa o seletor de pasta do navegador quando disponível, lembra a pasta autorizada e confirma antes de reutilizá-la. No Firefox, ative “Sempre perguntar onde salvar”. Nenhum caminho pessoal do autor está fixado no código público.
 
 ## Automação e e-mail
 
@@ -105,7 +109,7 @@ docker compose exec ollama ollama pull qwen2.5:1.5b
 # Ative ai.enabled em config/automacao.json.
 ```
 
-O modelo seleciona um fato do banco revisado para responder uma pergunta equivalente. Não cria experiência, certificações ou autorização de trabalho nem responde provas. Sem resposta disponível, exige intervenção.
+O modelo seleciona um fato do banco revisado para responder uma pergunta equivalente. Ele também propõe mudanças em workspaces, fontes e filtros em **Configurar com IA local**; a alteração só é gravada após confirmação. Não cria experiência, certificações ou autorização de trabalho nem responde provas. Sem resposta disponível, exige intervenção.
 
 Não há API paga obrigatória. Há consumo de RAM, CPU, disco, internet e energia. Ollama tem limite de 3 GB e descarrega o modelo após inatividade. Para parar: `docker compose stop ollama`.
 
@@ -113,7 +117,7 @@ Não há API paga obrigatória. Há consumo de RAM, CPU, disco, internet e energ
 
 RioVagas, Gupy, Glassdoor, Vagas.com, InfoJobs, Trabalha Brasil e GeekHunter dependem dos coletores e conteúdo disponível. Remote OK e Remotive usam APIs públicas; We Work Remotely usa RSS. Outros portais configurados são links manuais. Os feeds têm cache de seis horas.
 
-“Remoto” não significa contratação mundial. Restrições claras são filtradas; dados ambíguos ficam pendentes. O RSS do We Work Remotely pode divergir dos países aceitos na página: confira a elegibilidade antes de aprovar.
+“Remoto” não significa contratação mundial. Restrições claras são filtradas; dados ambíguos ficam pendentes. No We Work Remotely, o coletor prefere o link HTTPS direto da empresa quando ele existe. Páginas que exigem pagamento ou assinatura para candidatar são descartadas, sem tentativa de contornar a cobrança.
 
 Bloqueios, limites e mudanças de HTML podem impedir coleta ou envio. As regras e a detecção por texto são heurísticas. Não há compatibilidade universal, garantia de contratação ou aprovação ATS. Respeite as condições de cada portal.
 

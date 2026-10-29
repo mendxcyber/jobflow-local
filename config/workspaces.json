@@ -1,0 +1,20 @@
+{
+  "workspaces": [
+    {
+      "id": "brasil",
+      "label": "Brasil",
+      "countries": ["Brasil"],
+      "remote_only": false,
+      "manual_sources_key": "buscas_manuais",
+      "manual_sources": []
+    },
+    {
+      "id": "exterior",
+      "label": "EUA / Canadá",
+      "countries": ["Estados Unidos", "Canadá", "Global", "LATAM"],
+      "remote_only": true,
+      "manual_sources_key": "exterior_manuais",
+      "manual_sources": []
+    }
+  ]
+}
