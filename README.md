@@ -6,7 +6,7 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 
 <img width="1672" height="941" alt="Banner futurista neon da JobFlow" src="https://github.com/user-attachments/assets/3fd634ba-579e-4bb1-90fc-1f05aed7cd85" />
 
-*Captura real da instalação pessoal do autor. Os números não representam resultados de contratação. O código distribuído usa configuração fictícia.*
+*Organização, automação e controle total para a sua busca por emprego.*
 
 
 ## Demonstrações
