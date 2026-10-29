@@ -11,10 +11,12 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 ## Demonstrações
 
 **Demonstração no computador:**
-<video src="docs/assets/demos/jobflow-desktop.mp4" controls width="100%"></video>
+
+https://github.com/user-attachments/assets/fdbb6bcd-6247-40c5-879d-ff1f9ebd0ce3
 
 **Demonstração responsiva no celular:**
-<video src="docs/assets/demos/jobflow-mobile.mp4" controls width="100%"></video>
+
+https://github.com/user-attachments/assets/4c18438f-530d-4845-9a79-63a8ae39b85d
 
 Os vídeos mostram a interface em uso. A instalação pública começa com dados fictícios e os recursos de envio desligados para configuração e teste.
 
