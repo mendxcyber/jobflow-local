@@ -8,6 +8,15 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 
 *Captura real da instalação pessoal do autor. Os números não representam resultados de contratação. O código distribuído usa configuração fictícia.*
 
+## Demonstrações
+
+[![Abrir demonstração do JobFlow no computador](docs/assets/jobflow-dashboard.jpg)](docs/assets/demos/jobflow-desktop.mp4)
+
+- [Demonstração no computador (MP4)](docs/assets/demos/jobflow-desktop.mp4)
+- [Demonstração responsiva no celular (MP4)](docs/assets/demos/jobflow-mobile.mp4)
+
+Os vídeos mostram a interface em uso. A instalação pública começa com dados fictícios e os recursos de envio desligados para configuração e teste.
+
 ## Funcionalidades
 
 - Interface dark com mercados **Brasil** e **EUA / Canadá** e cartões por vaga.
@@ -20,6 +29,14 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 - Botão de envio por e-mail, com destinatário visível e PDF regenerado antes do envio.
 - Banco de respostas confirmadas e seleção opcional por IA local via Ollama.
 - Estado da extensão, diagnóstico de coleta, notificações e workflow n8n para buscas periódicas.
+
+## Funcionamento e evolução planejada
+
+O JobFlow é um **software local em evolução contínua**. O n8n orquestra uma nova varredura das fontes configuradas a cada seis horas; depois, o serviço aplica filtros, evita duplicatas, organiza as oportunidades e prepara os currículos ATS em português ou inglês.
+
+Nos formulários já compatíveis, a extensão pode preencher os dados, anexar o currículo e concluir o envio quando o modo automático estiver habilitado. As próximas atualizações ampliarão essa cobertura para que mais candidaturas compatíveis sejam preparadas e enviadas sem exigir que cada anúncio seja aberto e avaliado manualmente.
+
+O controle continuará sendo do usuário: será possível manter a revisão manual antes do envio, usar a fila automática, enviar por e-mail ou abrir a vaga. CAPTCHA, login expirado, testes e perguntas sem resposta confirmada permanecem em **Ação necessária**, sem inventar informações para avançar.
 
 ```mermaid
 flowchart LR
