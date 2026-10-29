@@ -4,6 +4,19 @@ Organizar candidaturas envolve mais do que encontrar links. Depois da busca vêm
 
 O JobFlow Local reúne essas etapas em um painel com filtros configuráveis, histórico em SQLite, geração de PDF e integração com n8n. A implementação usa Python e FastAPI, com execução local em Docker.
 
+A evolução adiciona interface dark, mercados Brasil e EUA/Canadá, perfis de
+currículo em português e inglês, fila automática e histórico de comprovantes.
+Um botão envia o ATS por e-mail após configuração SMTP. A extensão complementar
+3.0.0 identifica tentativas e interrompe fluxos sem resposta segura. Ollama pode
+selecionar fatos de um banco revisado para responder perguntas equivalentes.
+
+![Painel atual](assets/jobflow-dashboard.jpg)
+
+Os filtros verificam residência, idioma e senioridade, com revisão para casos
+ambíguos. O histórico distingue confirmação da página, aceitação SMTP e envios
+antigos sem evidência. O código público preserva dados fictícios e automação
+desligada por padrão na extensão.
+
 Esta primeira edição pública disponibiliza o código e exemplos fictícios para estudo e adaptação. O objetivo é mostrar como coleta, regras de negócio e estados de uma aplicação se conectam. Os coletores são heurísticos e exigem manutenção; o projeto não promete cobrir todos os sites ou enviar toda candidatura sem intervenção.
 
 O desenvolvimento nasceu de uma necessidade pessoal e contou com apoio de IA na implementação e documentação. As próximas melhorias incluem modularizar os coletores, melhorar a validação de configurações e ampliar os testes.

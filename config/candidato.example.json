@@ -66,5 +66,44 @@
       "suporte",
       "administrativo"
     ]
+  },
+  "en": {
+    "summary": "Fictional profile with experience in customer service, internal systems and basic IT support.",
+    "education": "Example technology course",
+    "education_status": "In progress",
+    "school": "High school completed",
+    "courses": [
+      "Example spreadsheet course"
+    ],
+    "skills": [
+      "Spreadsheets",
+      "CRM records",
+      "Digital customer service",
+      "Basic IT support"
+    ],
+    "languages": [
+      "Portuguese: native",
+      "English: intermediate"
+    ],
+    "experiences": [
+      {
+        "id": "suporte",
+        "company": "Example Company A",
+        "role": "Support Assistant",
+        "activities": [
+          "Assisted internal system users.",
+          "Recorded and followed up on requests."
+        ]
+      },
+      {
+        "id": "atendimento",
+        "company": "Example Company B",
+        "role": "Customer Service Representative",
+        "activities": [
+          "Assisted customers through digital channels.",
+          "Updated CRM records."
+        ]
+      }
+    ]
   }
 }

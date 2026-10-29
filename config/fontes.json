@@ -59,7 +59,8 @@
         "https://www.vagas.com.br/vagas-de-atendimento-em-rio-de-janeiro",
         "https://www.vagas.com.br/vagas-de-administrativo-em-rio-de-janeiro",
         "https://www.vagas.com.br/vagas-de-suporte-em-rio-de-janeiro",
-        "https://www.vagas.com.br/vagas-de-home-office-em-rio-de-janeiro?e%5B%5D=Rio+de+Janeiro"
+        "https://www.vagas.com.br/vagas-de-home-office-em-rio-de-janeiro?e%5B%5D=Rio+de+Janeiro",
+        "https://www.vagas.com.br/vagas-de-home-office"
       ]
     },
     {
@@ -70,7 +71,8 @@
         "https://www.infojobs.com.br/vagas-de-emprego-em-rio-janeiro,-rj.aspx",
         "https://www.infojobs.com.br/vagas-de-emprego-remoto-em-rio-janeiro,-rj-trabalho-home-office.aspx",
         "https://www.infojobs.com.br/vagas-de-emprego-administrativo-em-rio-janeiro,-rj.aspx",
-        "https://www.infojobs.com.br/vagas-de-emprego-atendimento-em-rio-janeiro,-rj.aspx"
+        "https://www.infojobs.com.br/vagas-de-emprego-atendimento-em-rio-janeiro,-rj.aspx",
+        "https://www.infojobs.com.br/vagas-de-emprego-trabalho-home-office.aspx"
       ]
     },
     {
@@ -86,14 +88,14 @@
       "nome": "Remote OK",
       "tipo": "remoteok_api",
       "url": "https://remoteok.com/api",
-      "max_detalhes_por_execucao": 30
+      "max_detalhes_por_execucao": 60
     },
     {
       "id": "wwr",
       "nome": "We Work Remotely",
       "tipo": "wwr_rss",
       "url": "https://weworkremotely.com/remote-jobs.rss",
-      "max_detalhes_por_execucao": 30
+      "max_detalhes_por_execucao": 60
     },
     {
       "id": "geekhunter",
@@ -104,6 +106,13 @@
       ],
       "max_detalhes_por_execucao": 8,
       "intervalo_detalhes_segundos": 2
+    },
+    {
+      "id": "remotive",
+      "nome": "Remotive",
+      "tipo": "remotive_api",
+      "url": "https://remotive.com/api/remote-jobs",
+      "max_detalhes_por_execucao": 60
     }
   ],
   "buscas_manuais": [
@@ -174,6 +183,32 @@
     {
       "nome": "Microsoft",
       "url": "https://careers.microsoft.com/"
+    }
+  ],
+  "exterior_manuais": [
+    {
+      "nome": "Remote OK",
+      "url": "https://remoteok.com/remote-customer-support-jobs"
+    },
+    {
+      "nome": "We Work Remotely",
+      "url": "https://weworkremotely.com/categories/remote-customer-support-jobs"
+    },
+    {
+      "nome": "Remotive",
+      "url": "https://remotive.com/remote-jobs/customer-support"
+    },
+    {
+      "nome": "Himalayas",
+      "url": "https://himalayas.app/jobs/countries/brazil"
+    },
+    {
+      "nome": "Wellfound",
+      "url": "https://wellfound.com/jobs"
+    },
+    {
+      "nome": "LinkedIn internacional",
+      "url": "https://www.linkedin.com/jobs/search/?keywords=remote%20customer%20support%20LATAM&f_WT=2&f_TPR=r604800"
     }
   ]
 }

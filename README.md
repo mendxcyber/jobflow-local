@@ -1,79 +1,115 @@
 # JobFlow Local
 
-Plataforma local para pesquisar vagas, aplicar critérios e acompanhar candidaturas em um único painel.
+Central local para pesquisar vagas, aplicar filtros, preparar currículos ATS e acompanhar candidaturas com intervenção humana quando necessário.
 
-O projeto surgiu de uma rotina real: consultar vários sites, revisar requisitos, preparar currículos e controlar envios. Esta é a edição pública, com dados fictícios e sem histórico pessoal.
+O projeto nasceu de uma rotina real de busca por emprego. A edição pública usa exemplos fictícios, sem credenciais, currículos ou histórico pessoal.
 
-## O que funciona
+![Interface dark do JobFlow, com mercados, etapas e estado da extensão](docs/assets/jobflow-dashboard.jpg)
 
-- Coleta de vagas por HTML, API pública e RSS, conforme a fonte.
-- Filtros por modalidade, remuneração, contrato, publicação e termos excluídos.
-- Histórico em SQLite e estados separados: novas, pendentes, enviadas, ignoradas e ação necessária.
-- Geração de currículo em PDF com dados declarados no arquivo local.
-- Workflow importável do n8n para executar buscas periodicamente.
-- API local usada pela [extensão complementar](https://github.com/mendxcyber/jobflow-browser-extension).
+*Captura real da instalação pessoal do autor. Os números não representam resultados de contratação. O código distribuído usa configuração fictícia.*
+
+## Funcionalidades
+
+- Interface dark com mercados **Brasil** e **EUA / Canadá** e cartões por vaga.
+- Remotas no Brasil inteiro; presenciais sujeitas aos filtros de localização e salário.
+- Fontes internacionais globais/LATAM e revisão de elegibilidade geográfica. A categoria não comprova a sede da empresa.
+- Novas oportunidades, Fila automática, Ação necessária, Envios automáticos, Enviadas/histórico, Pendentes e Ignoradas.
+- PDFs em português e inglês, com dados revisados, texto selecionável e nomes curtos.
+- Fila com tentativa identificada, prevenção de duplicatas e integração com a [extensão 3.0.0](https://github.com/mendxcyber/jobflow-browser-extension).
+- Registro de envio exige evidência da página ou aceitação SMTP; guarda data, mensagem e SHA-256 do PDF.
+- Botão de envio por e-mail, com destinatário visível e PDF regenerado antes do envio.
+- Banco de respostas confirmadas e seleção opcional por IA local via Ollama.
+- Estado da extensão, diagnóstico de coleta, notificações e workflow n8n para buscas periódicas.
 
 ```mermaid
 flowchart LR
-    N[n8n ou busca manual] --> W[FastAPI: coleta e filtros]
-    F[Fontes de vagas] --> W
-    W --> D[(SQLite)]
-    D --> P[Painel local]
-    D --> G[Gerador PDF]
-    P --> R[Revisão do usuário]
+    S[HTML / API / RSS] --> F[FastAPI: coleta e filtros]
+    N[n8n: agendamento] --> F
+    F --> D[(SQLite)]
+    D --> P[Painel por mercado e etapa]
+    D --> R[PDF ATS: PT / EN]
+    R --> X[Extensão: formulários compatíveis]
+    R --> E[E-mail: clique explícito + SMTP]
+    X --> C[Confirmação ou ação humana]
+    E --> C
+    C --> D
 ```
 
 ## Instalação
 
-Requisitos: Docker Desktop com suporte à virtualização e Docker Compose. Python 3.12 é útil para preparar a configuração.
+Requisitos: Docker com Compose e virtualização. Python 3.12 é opcional para preparar a configuração.
 
 ```bash
 git clone https://github.com/mendxcyber/jobflow-local.git
 cd jobflow-local
 python scripts/setup.py
+# Revise config/candidato.json e config/filtros.json.
 docker compose up -d --build
 ```
 
-Se não tiver Python, copie manualmente `config/candidato.example.json` para `config/candidato.json` e `config/respostas.example.json` para `config/respostas.json`. Crie as pastas `dados` e `curriculos`.
+Sem Python, copie os três arquivos `*.example.json` de `config/` para os mesmos nomes sem `.example` e crie `dados` e `curriculos`.
 
-Abra o painel em http://localhost:8090 e o n8n em http://localhost:5678. Conclua o cadastro local do n8n, importe `n8n/workflow.json` e execute manualmente antes de ativar o agendamento.
+Abra http://localhost:8090 e http://localhost:5678. Cadastre o usuário local do n8n, importe `n8n/workflow.json`, teste a busca e ative o agendamento. As portas ficam em `127.0.0.1`; ajuste o Compose se já estiverem ocupadas. Não exponha a aplicação à internet.
 
-Os serviços usam portas locais já comuns. Se tiver outra instalação nessas portas, pare a instalação anterior ou ajuste o Compose antes de iniciar.
-
-## Personalização
+## Configuração
 
 | Arquivo | Função |
 | --- | --- |
-| `config/candidato.json` | Dados pessoais, experiências, competências, idiomas e resumos escritos pelo usuário |
-| `config/filtros.json` | Critérios de seleção; o exemplo inicial usa RJ/Zona Oeste e precisa ser revisado |
-| `config/fontes.json` | Fontes automáticas e links de busca manual |
-| `config/respostas.json` | Respostas previamente revisadas; inicia vazio |
+| `config/candidato.json` | Perfil em português; `en` contém o perfil inglês revisado |
+| `config/filtros.json` | Modalidade, salário, contrato, localização e restrições; exemplo com foco de entrada/RJ |
+| `config/fontes.json` | Coletores automáticos e links manuais por mercado |
+| `config/respostas.json` | Respostas confirmadas em português; inicia vazio |
+| `config/respostas-en.json` | Respostas confirmadas em inglês; inicia vazio |
+| `config/automacao.json` | IA opcional, desligada por padrão na edição pública |
 
-Os arquivos pessoais, bancos e PDFs gerados estão no `.gitignore`. O resumo por área e a ordem das experiências são configuráveis; o sistema não valida se os dados declarados são verdadeiros.
+A versão inglesa não é inventada pelo modelo: preencha `en`. Resumos e ordem das experiências por área podem ser definidos em `en.summaries` e `en.experience_order`.
+
+Os PDFs ficam em subpastas curtas de `curriculos/`. Para uma segunda pasta, monte-a no contêiner e defina `PERSONALIZED_DIR`. Nenhum caminho pessoal do autor está fixado no código público.
+
+## Automação e e-mail
+
+Instale a extensão complementar e configure a URL local. **Preenchimento e envio iniciam desligados na extensão pública**; teste antes de habilitar. Navegador e computador precisam estar ligados, com as sessões dos portais autenticadas.
+
+CAPTCHA, login, testes, perguntas sem fatos confirmados, anexo não reconhecido e falta de comprovante interrompem o fluxo. Formulários prontos com envio final desligado aparecem em Novas oportunidades.
+
+Configure SMTP em http://localhost:8090/settings/email ou pelas variáveis do `.env.example`. O botão mostra o destinatário e fica desabilitado sem conta configurada. As credenciais ficam em `dados/smtp-private.json`, com permissões restritas no contêiner: não compartilhe esse volume.
+
+Aceitação SMTP **não comprova entrega ou leitura**. Confira sua caixa antes de repetir um envio incerto. Histórico antigo sem evidência não é reclassificado como automático.
+
+## IA local opcional
+
+```bash
+docker compose --profile ai up -d ollama
+docker compose exec ollama ollama pull qwen2.5:1.5b
+# Ative ai.enabled em config/automacao.json.
+```
+
+O modelo seleciona um fato do banco revisado para responder uma pergunta equivalente. Não cria experiência, certificações ou autorização de trabalho nem responde provas. Sem resposta disponível, exige intervenção.
+
+Não há API paga obrigatória. Há consumo de RAM, CPU, disco, internet e energia. Ollama tem limite de 3 GB e descarrega o modelo após inatividade. Para parar: `docker compose stop ollama`.
 
 ## Fontes e limites
 
-RioVagas, Gupy, Glassdoor, Vagas.com, InfoJobs, Trabalha Brasil e GeekHunter usam coletores que dependem do HTML disponível. Remote OK usa API pública e We Work Remotely usa RSS. Outros portais aparecem como links manuais. Uma fonte configurada não garante resultados: bloqueios, mudanças no HTML e limites de acesso podem interromper a coleta.
+RioVagas, Gupy, Glassdoor, Vagas.com, InfoJobs, Trabalha Brasil e GeekHunter dependem dos coletores e conteúdo disponível. Remote OK e Remotive usam APIs públicas; We Work Remotely usa RSS. Outros portais configurados são links manuais. Os feeds têm cache de seis horas.
 
-Vagas internacionais dos feeds ficam pendentes para revisão de elegibilidade, contrato e moeda. Valores estrangeiros não são tratados como reais. Os filtros são heurísticos e podem produzir falsos positivos ou negativos; revise cada oportunidade.
+“Remoto” não significa contratação mundial. Restrições claras são filtradas; dados ambíguos ficam pendentes. O RSS do We Work Remotely pode divergir dos países aceitos na página: confira a elegibilidade antes de aprovar.
 
-O sistema não resolve CAPTCHA, não realiza testes pelo candidato e não garante contratação ou aprovação ATS. A extensão é opcional e tem automação desativada por padrão na edição pública. Não use declarações ou consentimentos genéricos sem revisão.
+Bloqueios, limites e mudanças de HTML podem impedir coleta ou envio. As regras e a detecção por texto são heurísticas. Não há compatibilidade universal, garantia de contratação ou aprovação ATS. Respeite as condições de cada portal.
 
 ## Desenvolvimento e testes
 
 ```bash
-python -m venv .venv
-# Ative a .venv conforme seu sistema.
 python -m pip install -r worker/requirements.txt
-python -m unittest discover -s tests -v
+python scripts/setup.py
+CONFIG_DIR=./config python -m unittest discover -s tests -v
 ```
 
-Para iniciar sem Docker, configure `DATA_DIR`, `OUTPUT_DIR` e `CONFIG_DIR` com caminhos locais e execute `uvicorn app:app --app-dir worker --host 127.0.0.1 --port 8090`.
+No PowerShell, defina `$env:CONFIG_DIR` com o caminho absoluto de `config` antes dos testes. Para iniciar sem Docker, configure também `DATA_DIR` e `OUTPUT_DIR` e execute `uvicorn app:app --app-dir worker --host 127.0.0.1 --port 8090`.
+
+Os testes cobrem países, PDF inglês, comprovantes, fila, duplicatas, falhas e SMTP simulado. Testes em formulário fictício também verificaram envio único, CAPTCHA e pergunta desconhecida. Não representam candidaturas reais.
 
 ## Segurança e autoria
 
-Uso local por uma pessoa; sem autenticação para exposição pública. O Compose limita as portas a `127.0.0.1`. Não publique dados reais nem exponha a API à internet. Respeite as regras e limites de cada portal.
+Aplicação local para uma pessoa, sem autenticação para exposição pública. Dados pessoais, bancos, PDFs e segredos estão ignorados pelo Git.
 
-Desenvolvido por **mendxcyber**, com apoio de IA na implementação e documentação. A versão pública foi extraída do projeto pessoal e preparada com exemplos fictícios. Licença MIT para o código deste repositório; serviços e bibliotecas mantêm suas próprias licenças.
-
-Veja [o anúncio do projeto](docs/ANNOUNCEMENT.md), [como contribuir](CONTRIBUTING.md) e [as limitações de segurança](SECURITY.md).
+Desenvolvido por **mendxcyber**, com apoio de IA. MIT para o código; serviços e bibliotecas mantêm suas licenças. Veja [SECURITY.md](SECURITY.md), [CONTRIBUTING.md](CONTRIBUTING.md) e [o anúncio](docs/ANNOUNCEMENT.md).

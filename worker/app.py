@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import automation
+import mailer
+import dashboard as dashboard_ui
+import resume_en
 import hashlib
 import html
 import json
 import os
 import re
+import shutil
 import sqlite3
 import time
 import unicodedata
@@ -19,6 +24,7 @@ import requests
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from pypdf import PdfReader
 from reportlab.lib import colors
@@ -36,10 +42,20 @@ CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/app/config"))
 DB_PATH = DATA_DIR / "riovagas.db"
 MAX_PAGES = int(os.getenv("MAX_PAGES", "3"))
 REQUEST_DELAY = float(os.getenv("REQUEST_DELAY_SECONDS", "0.8"))
-TEMPLATE_VERSION = "ats-v2.2-compactnames"
+TEMPLATE_VERSION = "ats-v3-market"
 SOURCE_COOLDOWNS: dict[str, datetime] = {}
 
-app = FastAPI(title="Automação RioVagas — JobFlow")
+app = FastAPI(title="JobFlow Local")
+app.add_middleware(TrustedHostMiddleware,allowed_hosts=["localhost","127.0.0.1","[::1]","riovagas-worker","testserver"])
+
+
+@app.middleware("http")
+async def local_write_origin(request: Request, call_next):
+    origin=request.headers.get("origin","")
+    if request.method=="POST" and origin and not origin.startswith(("moz-extension://","chrome-extension://")):
+        if origin != str(request.base_url).rstrip("/"):
+            return Response("Origem de escrita não autorizada",status_code=403)
+    return await call_next(request)
 
 
 def load_json(name: str) -> dict[str, Any]:
@@ -140,6 +156,7 @@ def get_db() -> sqlite3.Connection:
         if column not in existing_columns:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
     conn.commit()
+    automation.migrate(conn)
     return conn
 
 
@@ -205,9 +222,20 @@ CYBER_TERMS = re.compile(r"\b(cyber\w*|security|seguranca|soc|siem|appsec|devsec
 
 def collect_remote_feed(session: requests.Session, source: dict[str, Any]) -> list[dict[str, Any]]:
     """Read public feeds once per run; retain original URLs and foreign salary units."""
-    response = session.get(source["url"], timeout=35)
-    response.raise_for_status()
-    if source["tipo"] == "remoteok_api":
+    cache=DATA_DIR / "feed-cache" / (re.sub(r"[^a-z0-9_-]","",source["id"])+".cache")
+    if cache.is_file() and time.time()-cache.stat().st_mtime<21600:
+        response=requests.Response()
+        response._content=cache.read_bytes()
+        response.status_code=200
+        response.encoding="utf-8"
+    else:
+        response = session.get(source["url"], timeout=35)
+        response.raise_for_status()
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        cache.write_bytes(response.content)
+    if source["tipo"] == "remotive_api":
+        records = [dict(title=x.get("title",""),url=x.get("url",""),description=x.get("description",""),company=x.get("company_name",""),location=x.get("candidate_required_location",""),date=x.get("publication_date","")) for x in response.json().get("jobs",[])]
+    elif source["tipo"] == "remoteok_api":
         records = [dict(title=x.get("position", ""), url=x.get("url", ""),
                         description=x.get("description", ""), company=x.get("company", ""),
                         location=x.get("location", ""), date=x.get("date", ""))
@@ -220,7 +248,7 @@ def collect_remote_feed(session: requests.Session, source: dict[str, Any]) -> li
     jobs = []
     for record in records:
         title = record["title"]
-        if not CYBER_TERMS.search(normalize(title)):
+        if not re.search(r"cyber|security|soc\b|support|help.?desk|service.?desk|customer|telemarket|call.?cent|back.?office|administrat|assistant|data.?entry|atendimento|suporte", normalize(title)):
             continue
         if not record["url"].startswith("https://"):
             continue
@@ -524,7 +552,7 @@ def collect_all_jobs(
         try:
             if source["tipo"] == "gupy":
                 collected = collect_gupy_jobs(session, source)
-            elif source["tipo"] in {"remoteok_api", "wwr_rss"}:
+            elif source["tipo"] in {"remoteok_api", "wwr_rss", "remotive_api"}:
                 collected = collect_remote_feed(session, source)
             else:
                 links = collect_riovagas_links(session, source) if source["tipo"] == "riovagas" else collect_html_links(session, source)
@@ -596,8 +624,30 @@ def classify(job: dict[str, Any], filters: dict[str, Any]) -> tuple[str, str, in
     reasons: list[str] = []
     pending: list[str] = []
 
-    if job.get("international_review"):
-        pending.append("confirmar país elegível, autorização de trabalho, contrato e remuneração na moeda original")
+    if re.search(r"\b(senior|sr|staff|principal|director|head|lead|manager|supervisor|coordenador|gerente|especialista)\b",title_norm):
+        reasons.append("senioridade acima do perfil de entrada")
+    if re.search(r"(?:superior|graduacao) (?:completa|completo) (?:obrigator|exigid)|(?:bachelor.s|completed degree).{0,25}(?:required|mandatory)",combined):
+        reasons.append("formação concluída obrigatória; graduação atual em andamento")
+
+    international = automation.market_for(job) == "exterior"
+    if international:
+        eligible, message = automation.eligibility(job)
+        if eligible == "blocked": reasons.append(message)
+        elif eligible == "review": pending.append(message)
+        if job.get("source")=="We Work Remotely":
+            pending.append("validar países na página da vaga: o feed global pode divergir das restrições do anúncio; portal pode exigir conta")
+        if re.search(r"\b(?:[3-9]|[1-9]\d)\+?\s+years\s+(?:of\s+)?(?:[\w-]+\s+){0,5}experience\b|minimum of [3-9] years",combined):
+            reasons.append("experiência obrigatória acima do perfil de entrada")
+        if re.search(r"\b(?:french|german|japanese|mandarin)\b",title_norm) or re.search(r"must be.{0,30}(?:native french|fluent french|fluent german)",combined):
+            reasons.append("idioma obrigatório não declarado no perfil")
+        if re.search(r"\b(?:fluent|native|c1|c2)\s+(?:in\s+)?english|english fluency",combined):
+            pending.append("confirmar nível de inglês exigido; currículo registra intermediário")
+        if not re.search(r"support|help.?desk|service.?desk|junior|entry.level|intern|assistant|customer service|telemarket|call.?cent|data.entry|back.?office|soc analyst",title_norm):
+            pending.append("revisar função e requisitos antes de candidatura internacional")
+        if re.search(r"\b(?:at least|minimum|requires?|required)\s+(?:[3-9]|\d{2,})\+?\s+years",combined):
+            reasons.append("experiência obrigatória acima do perfil de entrada")
+        if re.search(r"\b(?:contractor|freelance|independent contractor)\b",normalize(job.get("contract_type", ""))):
+            pending.append("revisar contrato internacional: preferência contra PJ/temporário")
         if re.search(r"\b(senior|sr|staff|principal|director|head|lead|manager)\b", title_norm):
             reasons.append("vaga internacional exige senioridade acima do perfil júnior")
 
@@ -605,7 +655,7 @@ def classify(job: dict[str, Any], filters: dict[str, Any]) -> tuple[str, str, in
         reasons.append("vaga exclusiva ou afirmativa para PCD")
 
     published = job.get("published_at")
-    if job.get("source") in {"GeekHunter", "Remote OK", "We Work Remotely"} and not published:
+    if not published:
         pending.append("confirmar data de publicação: limite de 7 dias")
     if published and published < datetime.now() - timedelta(days=int(filters["dias_maximos"])):
         reasons.append(f"publicada há mais de {filters['dias_maximos']} dias")
@@ -640,7 +690,7 @@ def classify(job: dict[str, Any], filters: dict[str, Any]) -> tuple[str, str, in
 
     salary = job.get("salary")
     if is_remote:
-        if salary is not None and salary < float(filters["salario_minimo_remoto"]):
+        if salary is not None and not international and salary < float(filters["salario_minimo_remoto"]):
             reasons.append(f"remuneração abaixo de R$ {filters['salario_minimo_remoto']:.2f}")
         if salary is None and not filters.get("aceitar_salario_nao_informado"):
             reasons.append("salário não informado")
@@ -858,10 +908,20 @@ def generate_pdf(conn: sqlite3.Connection, job_id: int) -> str:
     folder = OUTPUT_DIR / short_id
     filename = short_job_filename(row["cargo"] or row["title"])
     target = folder / filename
-    build_pdf(row, candidate, target, 9.2)
-    if len(PdfReader(str(target)).pages) > 1:
-        build_pdf(row, candidate, target, 8.55)
+    if row["market"] == "exterior":
+        resume_en.build(row,candidate,target)
+    else:
+        build_pdf(row, candidate, target, 9.2)
+        if len(PdfReader(str(target)).pages) > 1:
+            build_pdf(row, candidate, target, 8.55)
     relative = target.relative_to(OUTPUT_DIR).as_posix()
+    export_root=os.environ.get("PERSONALIZED_DIR","")
+    if export_root:
+        export=Path(export_root)/short_id/filename
+        export.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(target,export)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    conn.execute("UPDATE jobs SET pdf_sha256=?,resume_language=? WHERE id=?", (digest,"en" if row["market"]=="exterior" else "pt",job_id))
     if previous_relative and previous_relative != relative:
         previous_path = (OUTPUT_DIR / previous_relative).resolve()
         output_root = OUTPUT_DIR.resolve()
@@ -869,7 +929,7 @@ def generate_pdf(conn: sqlite3.Connection, job_id: int) -> str:
             previous_path.unlink()
     conn.execute(
         "UPDATE jobs SET pdf_path = ?, template_version = ?, status = ?, updated_at = ? WHERE id = ?",
-        (relative, TEMPLATE_VERSION, "material preparado", datetime.now().isoformat(timespec="seconds"), job_id),
+        (relative, TEMPLATE_VERSION, row["status"] if row["status"] in ("enviada","ignorada","aguardando ação humana") else "material preparado", datetime.now().isoformat(timespec="seconds"), job_id),
     )
     conn.commit()
     return relative
@@ -904,6 +964,8 @@ class ApplicationResult(BaseModel):
     state: str
     message: str = ""
     current_url: str = ""
+    attempt_token: str = ""
+    evidence: str = ""
 
 
 def application_payload(request: Request, row: sqlite3.Row) -> dict[str, Any]:
@@ -926,76 +988,111 @@ def application_payload(request: Request, row: sqlite3.Row) -> dict[str, Any]:
 
 
 @app.get("/api/applications/next")
-def next_application(request: Request) -> dict[str, Any]:
+def next_application(request: Request, client_version: str = "") -> dict[str, Any]:
     conn = get_db()
     try:
-        stale_before = (datetime.now() - timedelta(minutes=30)).isoformat(timespec="seconds")
-        conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute(
-            """
-            SELECT * FROM jobs
-            WHERE decision='aprovada' AND status IN ('encontrada', 'material preparado') AND pdf_path IS NOT NULL
-              AND COALESCE(hidden, 0)=0
-              AND (COALESCE(apply_state, 'ready') IN ('ready', 'retry')
-                   OR (apply_state='processing' AND COALESCE(apply_attempted_at, '') < ?))
-            ORDER BY score DESC, discovered_at DESC
-            LIMIT 1
-            """,
-            (stale_before,),
-        ).fetchone()
-        if not row:
+        if client_version == automation.VERSION:
+            filters=load_json("filtros.json")
+            for old in conn.execute("SELECT * FROM jobs WHERE apply_state='ready' AND decision='aprovada' AND status IN ('encontrada','material preparado') AND COALESCE(hidden,0)=0").fetchall():
+                job=dict(old)
+                job["published_at"]=datetime.fromisoformat(job["published_at"]) if job["published_at"] else None
+                decision,reason,score=classify(job,filters)
+                if decision != "aprovada" and not (old["reason"].startswith("aprovada manualmente") and decision=="pendente"):
+                    conn.execute("UPDATE jobs SET decision=?,reason=?,score=?,hidden=? WHERE id=?",(decision,reason,score,int(decision=="descartada"),old["id"]))
             conn.commit()
-            return {"job": None}
-        now = datetime.now().isoformat(timespec="seconds")
-        conn.execute(
-            "UPDATE jobs SET apply_state='processing', apply_message='', apply_attempted_at=?, updated_at=? WHERE id=?",
-            (now, now, row["id"]),
-        )
-        conn.commit()
-        return {"job": application_payload(request, row)}
+        return automation.claim(conn, client_version, lambda row: application_payload(request,row), generate_pdf)
     finally:
         conn.close()
 
 
 @app.get("/api/applications/by-url")
 def application_by_url(request: Request, url: str) -> dict[str, Any]:
-    normalized_url = url.rstrip("/")
-    conn = get_db()
-    try:
-        row = conn.execute(
-            "SELECT * FROM jobs WHERE rtrim(url, '/')=? AND decision='aprovada' AND pdf_path IS NOT NULL LIMIT 1",
-            (normalized_url,),
-        ).fetchone()
-        return {"job": application_payload(request, row) if row else None}
-    finally:
-        conn.close()
+    # Opening a page manually must never start an ignored/already-sent application.
+    return {"job":None}
 
 
 @app.post("/api/applications/{job_id}/result")
 def application_result(job_id: int, result: ApplicationResult) -> dict[str, Any]:
-    allowed = {"sent", "action_required", "retry", "failed", "processing"}
-    if result.state not in allowed:
-        raise HTTPException(400, "Estado de candidatura inválido")
-    conn = get_db()
+    conn=get_db()
     try:
-        row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
-        if not row:
-            raise HTTPException(404, "Vaga não encontrada")
-        status = {
-            "sent": "enviada",
-            "action_required": "aguardando ação humana",
-            "failed": "aguardando ação humana",
-        }.get(result.state, "material preparado")
-        now = datetime.now().isoformat(timespec="seconds")
-        detail = result.message.strip()[:1000]
-        if result.current_url:
-            detail = f"{detail} | Página: {result.current_url}".strip(" |")[:1000]
-        conn.execute(
-            "UPDATE jobs SET apply_state=?, apply_message=?, status=?, apply_attempted_at=?, updated_at=? WHERE id=?",
-            (result.state, detail, status, now, now, job_id),
-        )
+        return automation.record_result(conn,job_id,result)
+    finally:
+        conn.close()
+
+
+@app.post("/api/extension/heartbeat")
+def extension_heartbeat(data: dict[str, Any]):
+    conn=get_db()
+    try:
+        value={key:data.get(key) for key in ["version","autoApplyEnabled","autoSubmitEnabled"]}
+        value["at"]=datetime.now().isoformat(timespec="seconds")
+        automation.write_state(conn,"extension",value)
         conn.commit()
-        return {"ok": True, "state": result.state}
+        return {"ok":True,"required_version":automation.VERSION}
+    finally:
+        conn.close()
+
+
+@app.get("/api/notifications")
+def notifications():
+    conn=get_db()
+    try:
+        rows=[dict(r) for r in conn.execute("SELECT e.id,e.job_id,e.state,e.message,e.created_at,j.cargo,j.market FROM application_events e JOIN jobs j ON j.id=e.job_id ORDER BY e.id DESC LIMIT 50")]
+        return {"events":rows,"latest_id":rows[0]["id"] if rows else 0}
+    finally:
+        conn.close()
+
+
+@app.post("/api/notifications/read")
+def read_notifications():
+    conn=get_db()
+    conn.execute("UPDATE application_events SET seen=1")
+    conn.commit()
+    conn.close()
+    return RedirectResponse("/",status_code=303)
+
+
+@app.post("/api/applications/{job_id}/answers")
+def question_answers(job_id: int, data: dict[str, Any]):
+    conn=get_db()
+    try:
+        row=conn.execute("SELECT * FROM jobs WHERE id=?",(job_id,)).fetchone()
+        if not row or row["apply_state"]!="processing" or row["attempt_token"]!=data.get("attempt_token"):
+            raise HTTPException(409,"Tentativa não está ativa")
+        config=load_json("automacao.json")
+        answers=load_json("respostas-en.json" if row["market"]=="exterior" else "respostas.json").get("respostas",[])
+        return {"answers":automation.answer_questions(data.get("questions",[]),answers,load_json("candidato.json"),config.get("ai",{}))}
+    finally:
+        conn.close()
+
+
+@app.get("/guide",response_class=HTMLResponse)
+def guide():
+    return (APP_DIR / "guide.html").read_text(encoding="utf-8")
+
+
+@app.get("/settings/email",response_class=HTMLResponse)
+def email_settings_page():
+    return '''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Conta de envio — JobFlow</title><style>body{background:#0b121e;color:#dae8f8;font:16px/1.6 Segoe UI;max-width:650px;margin:60px auto;padding:20px}label{display:block;margin:20px 0}input,select,button{display:block;background:#172737;color:#eef7ff;border:1px solid #36516a;padding:12px;width:100%;border-radius:7px}button,a{color:#72e6d1}</style><a href="/">← Painel</a><h1>Configurar conta de envio</h1><p>As credenciais ficam no volume local do JobFlow. Não são enviadas à IA nem exibidas depois. O formulário não envia candidaturas.</p><form method="post" action="/settings/email"><label>Provedor<select name="host"><option value="smtp.gmail.com">Gmail</option><option value="smtp.office365.com">Microsoft 365 (se SMTP permitido)</option><option value="smtp.mail.yahoo.com">Yahoo</option></select></label><label>E-mail de envio<input type="email" name="user" required autocomplete="username"></label><label>Senha de aplicativo SMTP<input type="password" name="password" required autocomplete="new-password"></label><p>Gmail exige verificação em duas etapas e conta compatível com senhas de app. Não use a senha normal da conta.</p><button>Salvar configuração local</button></form></html>'''
+
+
+@app.post("/settings/email")
+def save_email_settings(host:str=Form(...),user:str=Form(...),password:str=Form(...)):
+    if host not in {"smtp.gmail.com","smtp.office365.com","smtp.mail.yahoo.com"} or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+",user):
+        raise HTTPException(400,"Provedor ou endereço inválido")
+    path=DATA_DIR/"smtp-private.json"
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_text(json.dumps({"SMTP_HOST":host,"SMTP_USER":user,"SMTP_PASSWORD":password,"SMTP_PORT":"587"}),encoding="utf-8")
+    path.chmod(0o600)
+    return RedirectResponse("/guide#email",status_code=303)
+
+
+@app.post("/jobs/{job_id}/email")
+def send_application_email(job_id: int, market: str="brasil"):
+    conn=get_db()
+    try:
+        mailer.send(conn,job_id,load_json("candidato.json"),OUTPUT_DIR,generate_pdf)
+        return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab=automaticas",status_code=303)
     finally:
         conn.close()
 
@@ -1031,6 +1128,8 @@ def run_search() -> dict[str, Any]:
                     continue
                 decision, reason, score = classify(job, filters)
                 job_id, is_new = save_job(conn, job, decision, reason, score)
+                conn.execute("UPDATE jobs SET market=? WHERE id=?",(automation.market_for(job),job_id))
+                conn.commit()
                 result["novas"] += int(is_new)
                 result[{"aprovada": "aprovadas", "pendente": "pendentes", "descartada": "descartadas"}[decision]] += 1
                 row = conn.execute("SELECT pdf_path, template_version FROM jobs WHERE id = ?", (job_id,)).fetchone()
@@ -1040,6 +1139,10 @@ def run_search() -> dict[str, Any]:
                 result["erros"].append({"fonte": job.get("source", ""), "url": job["url"], "erro": str(exc)[:250]})
     finally:
         conn.close()
+    diagnostic=get_db()
+    automation.write_state(diagnostic,"last_search",result)
+    diagnostic.commit()
+    diagnostic.close()
     result["painel"] = "http://localhost:8090"
     return result
 
@@ -1053,146 +1156,28 @@ def badge(value: str) -> str:
     return f'<span class="badge {cls}">{html.escape(value)}</span>'
 
 
-def dashboard_tab_for(row: sqlite3.Row) -> str:
-    if row["status"] == "enviada":
-        return "enviadas"
-    if row["status"] == "ignorada":
-        return "ignoradas"
-    if row["status"] == "aguardando ação humana":
-        return "acao"
-    if row["decision"] == "pendente":
-        return "pendentes"
-    return "novas"
+def dashboard_tab_for(row):
+    return dashboard_ui.tab_for(row)
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, response: Response, tab: str = "novas") -> str:
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    conn = get_db()
-    all_rows = conn.execute(
-        "SELECT * FROM jobs WHERE COALESCE(hidden, 0)=0 AND decision<>'descartada' AND lower(reason) NOT LIKE '%pcd%' "
-        "ORDER BY CASE decision WHEN 'aprovada' THEN 0 WHEN 'pendente' THEN 1 ELSE 2 END, score DESC, discovered_at DESC"
-    ).fetchall()
-    conn.close()
-    tab_labels = {
-        "novas": "Novas vagas",
-        "pendentes": "Pendentes",
-        "acao": "Ação necessária",
-        "enviadas": "Enviadas",
-        "ignoradas": "Ignoradas",
-    }
-    if tab not in tab_labels:
-        tab = "novas"
-    tab_counts = {name: 0 for name in tab_labels}
-    for item in all_rows:
-        tab_counts[dashboard_tab_for(item)] += 1
-    rows = [item for item in all_rows if dashboard_tab_for(item) == tab]
-    tabs_html = "".join(
-        f'<a class="tab {"active" if name == tab else ""}" href="/?tab={name}">'
-        f'{label}<span class="tab-count">{tab_counts[name]}</span></a>'
-        for name, label in tab_labels.items()
-    )
-    sources = load_json("fontes.json")
-    access_host = request.url.hostname or "localhost"
-    if ":" in access_host and not access_host.startswith("["):
-        access_host = f"[{access_host}]"
-    n8n_url = f"{request.url.scheme}://{access_host}:5678"
-    manual_links = "".join(
-        f'<a class="button secondary" href="{html.escape(item["url"])}" target="_blank" rel="noopener">{html.escape(item["nome"])}</a>'
-        for item in sources.get("buscas_manuais", [])
-    )
-    table_rows = []
-    for row in rows:
-        salary = f"R$ {row['salary']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if row["salary"] else "Não informado"
-        pdf = f'<a class="button secondary" href="/pdf/{row["id"]}">Baixar currículo</a>' if row["pdf_path"] else ""
-        actions = ""
-        if row["status"] == "enviada":
-            actions = f'''
-                {pdf}
-                <a class="button" href="{html.escape(row['url'])}" target="_blank" rel="noopener">Abrir vaga</a>
-                <form method="post" action="/jobs/{row['id']}/restore"><button class="button secondary">Voltar para novas</button></form>
-            '''
-        elif row["status"] == "ignorada":
-            actions = f'''
-                <a class="button" href="{html.escape(row['url'])}" target="_blank" rel="noopener">Abrir vaga</a>
-                <form method="post" action="/jobs/{row['id']}/restore"><button class="button secondary">Restaurar</button></form>
-            '''
-        elif row["status"] == "aguardando ação humana":
-            note = html.escape(row["apply_message"] or "A candidatura automática precisa da sua intervenção.")
-            actions = f'''
-                {pdf}
-                <a class="button" href="{html.escape(row['url'])}" target="_blank" rel="noopener">Resolver agora</a>
-                <div class="apply-note">{note}</div>
-                <form method="post" action="/jobs/{row['id']}/restore"><button class="button secondary">Voltar para novas</button></form>
-            '''
-        elif row["decision"] == "aprovada":
-            actions = f'''
-                {pdf}
-                <form method="post" action="/jobs/{row['id']}/regenerate?return_tab={tab}"><button class="button secondary">Regenerar currículo ATS</button></form>
-                <a class="button" href="{html.escape(row['url'])}" target="_blank" rel="noopener">Abrir vaga</a>
-                <form method="post" action="/jobs/{row['id']}/status?return_tab={tab}"><input type="hidden" name="status" value="enviada"><button class="button success">Marcar enviada</button></form>
-                <form method="post" action="/jobs/{row['id']}/status?return_tab={tab}"><input type="hidden" name="status" value="ignorada"><button class="linkbutton">Ignorar</button></form>
-            '''
-        elif row["decision"] == "pendente":
-            actions = f'''
-                <a class="button" href="{html.escape(row['url'])}" target="_blank" rel="noopener">Abrir vaga</a>
-                <form method="post" action="/jobs/{row['id']}/approve"><button class="button success">Aprovar e gerar PDF</button></form>
-                <form method="post" action="/jobs/{row['id']}/status?return_tab={tab}"><input type="hidden" name="status" value="ignorada"><button class="linkbutton">Ignorar</button></form>
-            '''
-        else:
-            actions = f'<a class="button" href="{html.escape(row["url"])}" target="_blank" rel="noopener">Abrir vaga</a>'
-        table_rows.append(f'''
-            <tr>
-              <td>{badge(row['decision'])}<br>{badge(row['status'])}</td>
-              <td><strong>{html.escape(row['cargo'] or row['title'])}</strong><div class="muted">{html.escape(row['company'] or row['title'])}</div></td>
-              <td><strong>{html.escape(row['source'])}</strong><div class="muted">{html.escape(row['location'] or 'Local não identificado')} · {html.escape(row['work_mode'] or 'Modalidade não informada')}</div></td>
-              <td>{salary}<br><span class="muted">{html.escape(row['contract_type'] or 'Contrato não informado')}</span></td>
-              <td>{html.escape(row['published_at'] or 'Data não identificada')}</td>
-              <td><strong>{row['score']}/100</strong><div class="muted">{html.escape(row['reason'])}</div></td>
-              <td class="actions">{actions}</td>
-            </tr>
-        ''')
-    rows_html = "".join(table_rows) or f'<tr><td colspan="7" class="empty">Nenhuma vaga em <strong>{html.escape(tab_labels[tab])}</strong>.</td></tr>'
-    return f'''<!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Painel de vagas — JobFlow</title>
-<style>
-:root{{color-scheme:dark}} *{{box-sizing:border-box}} body{{margin:0;background:#090e18;color:#e5e7eb;font-family:Inter,Segoe UI,Arial,sans-serif}}
-.top{{background:linear-gradient(120deg,#0f172a,#172554);color:#f8fafc;padding:30px 5vw;border-bottom:1px solid #25324a}} .top h1{{margin:0 0 7px;font-size:29px}} .top p{{margin:0;color:#b8c4d6}}
-.wrap{{max-width:1500px;margin:22px auto;padding:0 24px}} .toolbar{{display:flex;gap:12px;align-items:center;margin-bottom:18px;flex-wrap:wrap}}
-.button,button.button{{display:inline-block;border:1px solid #3b82f6;border-radius:8px;padding:9px 13px;background:#2563eb;color:#fff;text-decoration:none;cursor:pointer;font:inherit;white-space:nowrap}}
-.button:hover,button.button:hover{{background:#1d4ed8}} .button.secondary{{background:#1e293b;color:#dbeafe;border-color:#3a4a61}} .button.secondary:hover{{background:#293548}} .button.success{{background:#15803d;border-color:#22c55e}} .button.success:hover{{background:#166534}} .linkbutton{{background:none;border:0;color:#a7b4c8;text-decoration:underline;cursor:pointer}}
-.card{{background:#111827;border:1px solid #273449;border-radius:12px;overflow:auto;box-shadow:0 12px 28px rgba(0,0,0,.28)}} table{{border-collapse:collapse;width:100%;min-width:1080px}}
-th{{background:#172033;text-align:left;color:#aebbd0;font-size:12px;text-transform:uppercase;letter-spacing:.04em}} th,td{{padding:13px;border-bottom:1px solid #263247;vertical-align:top}} tbody tr:hover{{background:#141f31}}
-.muted{{font-size:12px;color:#93a3b8;margin-top:5px;max-width:430px}} .apply-note{{max-width:300px;margin-top:7px;color:#fde68a;font-size:12px;line-height:1.35}} .badge{{display:inline-block;border-radius:999px;padding:3px 8px;margin:1px;font-size:11px;background:#273449;color:#d4dbe7}}
-.badge.good{{background:#123923;color:#86efac}} .badge.bad{{background:#441a20;color:#fca5a5}} .badge.sent{{background:#172c55;color:#93c5fd}} .badge.wait{{background:#44340d;color:#fde68a}}
-.badge.ignored{{background:#293241;color:#cbd5e1}}
-.actions{{display:flex;gap:7px;align-items:flex-start;flex-wrap:wrap}} form{{margin:0}} .empty{{text-align:center;padding:50px;color:#93a3b8}}
-.note{{background:#2b230f;border:1px solid #66551c;border-radius:9px;padding:11px 14px;margin-bottom:16px;color:#fde68a}}
-.tabs{{display:flex;gap:8px;align-items:center;overflow-x:auto;margin:4px 0 16px;padding:4px 0}}
-.tab{{display:flex;gap:8px;align-items:center;padding:10px 14px;border:1px solid #2b3a50;border-radius:9px;background:#111827;color:#b8c5d8;text-decoration:none;font-weight:650;white-space:nowrap}}
-.tab:hover{{border-color:#52729a;background:#162033}} .tab.active{{background:#1d4ed8;color:#fff;border-color:#60a5fa}}
-.tab-count{{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:22px;padding:0 7px;border-radius:999px;background:#263449;color:#dbeafe;font-size:12px}}
-.tab.active .tab-count{{background:#dbeafe;color:#173b7a}}
-</style></head>
-<body><div class="top"><h1>Vagas e currículos de JobFlow</h1><p>RioVagas · Gupy · Glassdoor · Vagas.com · InfoJobs · Trabalha Brasil · GeekHunter · Remote OK · We Work Remotely · últimos 7 dias</p></div>
-<main class="wrap"><div class="note">A extensão envia automaticamente as candidaturas completas. CAPTCHA, login vencido, testes e perguntas sem resposta segura aparecem em “Ação necessária”.</div>
-<div class="toolbar"><form method="post" action="/run-browser"><button class="button">Pesquisar agora</button></form><a class="button secondary" href="{html.escape(n8n_url)}" target="_blank">Abrir n8n</a></div>
-<div class="toolbar"><span class="muted">Buscas adicionais que exigem navegação manual:</span>{manual_links}</div>
-<nav class="tabs" aria-label="Organização das vagas">{tabs_html}</nav>
-<div class="card"><table><thead><tr><th>Decisão</th><th>Vaga</th><th>Fonte e local</th><th>Remuneração</th><th>Publicação</th><th>Aderência</th><th>Ações</th></tr></thead><tbody>{rows_html}</tbody></table></div></main></body></html>'''
+@app.get("/",response_class=HTMLResponse)
+def dashboard(request:Request,response:Response,tab:str="novas",market:str="brasil"):
+    response.headers["Cache-Control"]="no-store"
+    conn=get_db()
+    try:
+        return dashboard_ui.render(conn,load_json("fontes.json"),market,tab)
+    finally:
+        conn.close()
 
 
 @app.post("/run-browser")
-def run_browser() -> RedirectResponse:
+def run_browser(market: str="brasil") -> RedirectResponse:
     run_search()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab=fila", status_code=303)
 
 
 @app.post("/jobs/{job_id}/status")
-def update_status(job_id: int, status: str = Form(...), return_tab: str = "novas") -> RedirectResponse:
+def update_status(job_id: int, status: str = Form(...), return_tab: str = "novas", market: str = "brasil") -> RedirectResponse:
     allowed = {"enviada", "ignorada", "aguardando ação humana", "material preparado"}
     if status not in allowed:
         raise HTTPException(400, "Status inválido")
@@ -1202,15 +1187,17 @@ def update_status(job_id: int, status: str = Form(...), return_tab: str = "novas
         "UPDATE jobs SET status=?, apply_state=?, updated_at=? WHERE id=?",
         (status, apply_state, datetime.now().isoformat(timespec="seconds"), job_id),
     )
+    if status == "enviada":
+        conn.execute("UPDATE jobs SET sent_via='manual',sent_at=?,attempt_token=NULL WHERE id=?",(datetime.now().isoformat(timespec="seconds"),job_id))
     conn.commit()
     conn.close()
-    if return_tab not in {"novas", "pendentes", "acao", "enviadas", "ignoradas"}:
+    if return_tab not in dashboard_ui.LABELS:
         return_tab = "novas"
-    return RedirectResponse(f"/?tab={return_tab}", status_code=303)
+    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab={return_tab}", status_code=303)
 
 
 @app.post("/jobs/{job_id}/restore")
-def restore_job(job_id: int) -> RedirectResponse:
+def restore_job(job_id: int,market: str="brasil") -> RedirectResponse:
     conn = get_db()
     row = conn.execute("SELECT decision, pdf_path FROM jobs WHERE id=?", (job_id,)).fetchone()
     if not row:
@@ -1218,7 +1205,7 @@ def restore_job(job_id: int) -> RedirectResponse:
         raise HTTPException(404, "Vaga não encontrada")
     if row["decision"] == "aprovada":
         status = "material preparado" if row["pdf_path"] else "encontrada"
-        destination = "novas"
+        destination = "fila"
     elif row["decision"] == "pendente":
         status = "pendente de informação"
         destination = "pendentes"
@@ -1231,11 +1218,11 @@ def restore_job(job_id: int) -> RedirectResponse:
     )
     conn.commit()
     conn.close()
-    return RedirectResponse(f"/?tab={destination}", status_code=303)
+    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab={destination}", status_code=303)
 
 
 @app.post("/jobs/{job_id}/approve")
-def approve_job(job_id: int) -> RedirectResponse:
+def approve_job(job_id: int,market: str="brasil") -> RedirectResponse:
     conn = get_db()
     row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
     if not row:
@@ -1248,11 +1235,11 @@ def approve_job(job_id: int) -> RedirectResponse:
     conn.commit()
     generate_pdf(conn, job_id)
     conn.close()
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab=fila", status_code=303)
 
 
 @app.post("/jobs/{job_id}/regenerate")
-def regenerate_job_pdf(job_id: int, return_tab: str = "novas") -> RedirectResponse:
+def regenerate_job_pdf(job_id: int, return_tab: str = "novas",market: str="brasil") -> RedirectResponse:
     conn = get_db()
     row = conn.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone()
     if not row:
@@ -1260,9 +1247,9 @@ def regenerate_job_pdf(job_id: int, return_tab: str = "novas") -> RedirectRespon
         raise HTTPException(404, "Vaga não encontrada")
     generate_pdf(conn, job_id)
     conn.close()
-    if return_tab not in {"novas", "pendentes", "acao", "enviadas", "ignoradas"}:
+    if return_tab not in dashboard_ui.LABELS:
         return_tab = "novas"
-    return RedirectResponse(f"/?tab={return_tab}", status_code=303)
+    return RedirectResponse(f"/?market={market if market in {'brasil','exterior'} else 'brasil'}&tab={return_tab}", status_code=303)
 
 
 @app.get("/pdf/{job_id}")
