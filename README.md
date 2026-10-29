@@ -12,11 +12,11 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 
 **Demonstração no computador:**
 
-https://github.com/user-attachments/assets/fdbb6bcd-6247-40c5-879d-ff1f9ebd0ce3
+https://github.com/user-attachments/assets/30091c54-ae5b-4bdd-bd14-6b402f5a9369
 
 **Demonstração responsiva no celular:**
 
-https://github.com/user-attachments/assets/4c18438f-530d-4845-9a79-63a8ae39b85d
+https://github.com/user-attachments/assets/b73ecad4-a5a2-4b78-8d40-0f6801a37071
 
 Os vídeos mostram a interface em uso. A instalação pública começa com dados fictícios e os recursos de envio desligados para configuração e teste.
 
