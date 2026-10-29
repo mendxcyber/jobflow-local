@@ -4,7 +4,7 @@ Central local para pesquisar vagas, aplicar filtros, preparar currículos ATS e 
 
 O projeto nasceu de uma rotina real de busca por emprego. A edição pública usa exemplos fictícios, sem credenciais, currículos ou histórico pessoal.
 
-<img width="1895" height="935" alt="JobFlow" src="https://github.com/user-attachments/assets/34dcb94e-a0f9-4aec-be81-0e1049461d02" />
+<img width="1672" height="941" alt="Banner futurista neon da JobFlow" src="https://github.com/user-attachments/assets/3fd634ba-579e-4bb1-90fc-1f05aed7cd85" />
 
 *Captura real da instalação pessoal do autor. Os números não representam resultados de contratação. O código distribuído usa configuração fictícia.*
 
