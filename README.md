@@ -10,7 +10,7 @@ O projeto nasceu de uma rotina real de busca por emprego. A edição pública us
 
 ## Demonstrações
 
-[![Abrir demonstração do JobFlow no computador](docs/assets/jobflow-dashboard.jpg)](docs/assets/demos/jobflow-desktop.mp4)
+[![Abrir demonstração do JobFlow no computador]](docs/assets/demos/jobflow-desktop.mp4)
 
 - [Demonstração no computador (MP4)](docs/assets/demos/jobflow-desktop.mp4)
 - [Demonstração responsiva no celular (MP4)](docs/assets/demos/jobflow-mobile.mp4)
