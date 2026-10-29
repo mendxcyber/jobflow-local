@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import unittest
 from datetime import datetime,timedelta
@@ -18,7 +19,11 @@ from pypdf import PdfReader
 class AutomationTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
-        self.patches=[patch.object(app,'DATA_DIR',Path(self.temp.name)),patch.object(app,'DB_PATH',Path(self.temp.name)/'jobs.db'),patch.object(app,'OUTPUT_DIR',Path(self.temp.name)/'pdf'),patch.object(app,'CONFIG_DIR',Path(__file__).resolve().parents[1]/'config')]
+        repo_config=Path(__file__).resolve().parents[1]/'config'
+        self.config_dir=Path(self.temp.name)/'config'
+        shutil.copytree(repo_config,self.config_dir)
+        shutil.copyfile(self.config_dir/'candidato.example.json',self.config_dir/'candidato.json')
+        self.patches=[patch.object(app,'DATA_DIR',Path(self.temp.name)),patch.object(app,'DB_PATH',Path(self.temp.name)/'jobs.db'),patch.object(app,'OUTPUT_DIR',Path(self.temp.name)/'pdf'),patch.object(app,'CONFIG_DIR',self.config_dir)]
         for p in self.patches:p.start()
         self.secret_patch=patch.dict(os.environ,{"SMTP_CONFIG_FILE":str(Path(self.temp.name)/'smtp.json'),"PERSONALIZED_DIR":""})
         self.secret_patch.start()
