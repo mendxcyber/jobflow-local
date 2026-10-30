@@ -45,19 +45,14 @@ Nos formulários já compatíveis, a extensão pode preencher os dados, anexar o
 
 O controle continuará sendo do usuário: será possível manter a revisão manual antes do envio, usar a fila automática, enviar por e-mail ou abrir a vaga. CAPTCHA, login expirado, testes e perguntas sem resposta confirmada permanecem em **Ação necessária**, sem inventar informações para avançar.
 
-```mermaid
-flowchart LR
-    S[HTML / API / RSS] --> F[FastAPI: coleta e filtros]
-    N[n8n: agendamento] --> F
-    F --> D[(SQLite)]
-    D --> P[Painel por mercado e etapa]
-    D --> R[PDF ATS: PT / EN]
-    R --> X[Extensão: formulários compatíveis]
-    R --> E[E-mail: clique explícito + SMTP]
-    X --> C[Confirmação ou ação humana]
-    E --> C
-    C --> D
-```
+### Fluxo do sistema
+
+1. **Coleta:** HTML, APIs, RSS e o agendamento do n8n alimentam o serviço FastAPI.
+2. **Processamento:** filtros, deduplicação e classificação organizam as vagas no SQLite.
+3. **Painel:** cada oportunidade aparece no workspace e na etapa correspondente.
+4. **Currículo:** o JobFlow gera o PDF ATS em português ou inglês.
+5. **Candidatura:** extensão ou e-mail executam os fluxos compatíveis.
+6. **Confirmação:** o resultado volta ao histórico; bloqueios seguem para **Ação necessária**.
 
 ## Instalação
 
